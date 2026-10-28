@@ -3,6 +3,7 @@ import getpass
 import hashlib
 import json
 import os
+import shutil
 import socket
 import struct
 import subprocess
@@ -70,7 +71,7 @@ def check_and_apply_updates(client_dir: str):
         return
 
     print(f"\nUpdate available! Installed: {installed_release} -> Remote: {remote_release}")
-    print(f"Fetching manifest...")
+    print("Fetching manifest...")
 
     man_req = urllib.request.Request(manifest_url, headers=HTTP_HEADERS)
     with urllib.request.urlopen(man_req, timeout=10.0) as resp:
@@ -223,6 +224,50 @@ def split_messages(payload: bytes):
         offset += length
     return results
 
+# --- 3. Dynamic Environment & Runner Resolution ---
+
+def get_screen_resolution() -> tuple:
+    """Detect current active display resolution via xrandr."""
+    try:
+        output = subprocess.check_output(["xrandr"], text=True, stderr=subprocess.DEVNULL)
+        for line in output.splitlines():
+            if "*" in line:
+                res = line.split()[0]
+                w, h = res.split("x")
+                return int(w), int(h)
+    except Exception:
+        pass
+    return 1280, 800
+
+def resolve_wine_binary(client_dir: str) -> str:
+    if os.environ.get("WINE_RUNNER"):
+        return os.environ["WINE_RUNNER"]
+
+    cfg_path = os.path.join(client_dir, "runner_config.json")
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r") as f:
+                data = json.load(f)
+                saved_bin = data.get("wine_bin")
+                if saved_bin and os.path.exists(saved_bin):
+                    return saved_bin
+        except Exception:
+            pass
+
+    user_space_candidates = [
+        os.path.expanduser("~/.local/share/wine-runners/wine-9.0-staging-amd64/bin/wine"),
+        os.path.expanduser("~/.local/bin/wine"),
+    ]
+    for runner in user_space_candidates:
+        if os.path.isfile(runner) and os.access(runner, os.X_OK):
+            return runner
+
+    sys_wine = shutil.which("wine")
+    if sys_wine:
+        return sys_wine
+
+    return "wine"
+
 def main():
     client_dir = os.path.dirname(os.path.abspath(__file__))
     
@@ -321,8 +366,15 @@ def main():
     print(f"\nAuthenticated as {session['username']}")
 
     # Step 3: Run game client synchronously
+    wine_bin = resolve_wine_binary(client_dir)
+    width, height = get_screen_resolution()
+    print(f"Using Wine runner: {wine_bin}")
+    print(f"Target display resolution: {width}x{height}")
+
     game_args = [
-        "wine",
+        wine_bin,
+        "explorer",
+        f"/desktop=SWG,{width}x{height}",
         "SWGEmu.exe",
         "--",
         "-s", "ClientGame",
@@ -335,6 +387,11 @@ def main():
         f"sessionId={session['sessionId']}",
         "-s", "SwgClient",
         "allowMultipleInstances=true",
+        "-s", "ClientGraphics",
+        f"screenWidth={width}",
+        f"screenHeight={height}",
+        "windowed=true",
+        "borderlessWindow=true",
     ]
 
     print("Launching SWG...")
