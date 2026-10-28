@@ -96,7 +96,7 @@ echo "==> Searching for SWG installation ISOs..."
 prompt_iso() {
     local num="$1"
     local found
-    found=$(find . "$HOME/Downloads" -maxdepth 2 -iname "*galaxies*$num*.iso" -o -iname "*disc*$num*.iso" 2>/dev/null | head -n 1)
+    found=$(find . "$HOME/Downloads" -maxdepth 2 \( -iname "*galaxies*$num*.iso" -o -iname "*disc*$num*.iso" \) 2>/dev/null | head -n 1)
     if [ -z "$found" ] || [ ! -f "$found" ]; then
         read -rp "Enter path to Disc $num ISO: " found
     fi
@@ -189,6 +189,6 @@ EOF
 fi
 
 echo ""
-echo "====================================================================="
+echo "=========================================================="
 echo "Extraction complete! Files placed in: $TARGET_DIR"
-echo "====================================================================="
+echo "=========================================================="
